@@ -4,8 +4,9 @@ import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { WavRenderer } from '../utils/wav_renderer';
 import { Button } from '../components/button/Button';
-import { STORY_INSTRUCTIONS } from '../utils/story_config';
+import { STORY_INSTRUCTIONS, VOICE_CONFIGS } from '../utils/story_config';
 import { loadStoryContent, parseStoryMd } from '../utils/file_utils';
+import { Logger } from '../utils/logger';  // We'll create this
 
 import './ConsolePage.scss';
 
@@ -19,6 +20,8 @@ interface RealtimeEvent {
 }
 
 export function StoryConsolePage() {
+  const logger = useRef<Logger>(new Logger('story-events'));
+
   const apiKey = LOCAL_RELAY_SERVER_URL
     ? ''
     : localStorage.getItem('tmp::voice_api_key') ||
@@ -68,6 +71,7 @@ export function StoryConsolePage() {
     const storyContent = await loadStoryContent('scene1_story.md');
     const scene = parseStoryMd(storyContent);
     const initialNarration = scene.elements.find(e => e.type === 'narrate')?.content;
+    const chefBaoElement = scene.elements.find(e => e.type === 'speak' && e.character === 'chef_bao');
 
     startTimeRef.current = new Date().toISOString();
     setIsConnected(true);
@@ -86,6 +90,15 @@ export function StoryConsolePage() {
         text: `${STORY_INSTRUCTIONS}\n[SYSTEM] Initial narration: "${initialNarration}"\nPlease begin by narrating exactly the provided initial narration text.`,
       },
     ]);
+
+  
+    client.updateSession({ voice: VOICE_CONFIGS.chef_bao });
+    client.sendUserMessageContent([
+      {
+        type: 'input_text',
+        text: `[SYSTEM] Please read this line with ${chefBaoElement?.emotion} emotion: "${chefBaoElement?.content}"`,
+      },
+    ]);  
 
     // Start story
     client.sendUserMessageContent([
@@ -187,9 +200,11 @@ export function StoryConsolePage() {
 
     // Set up audio transcription
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
+    logger.current.log('session.update', { input_audio_transcription: { model: 'whisper-1' } });
 
     // Handle realtime events
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
+      logger.current.log('realtime.event', realtimeEvent);
       setRealtimeEvents((realtimeEvents) => {
         const lastEvent = realtimeEvents[realtimeEvents.length - 1];
         if (lastEvent?.event.type === realtimeEvent.event.type) {
@@ -202,30 +217,39 @@ export function StoryConsolePage() {
     });
 
     // Handle errors
-    client.on('error', (event: any) => console.error(event));
+    client.on('error', (event: any) => {
+      logger.current.error('client.error', event);
+      console.error(event);
+    });
 
     // Handle interruptions
     client.on('conversation.interrupted', async () => {
+      logger.current.log('conversation.interrupted');
       const trackSampleOffset = await wavStreamPlayer.interrupt();
       if (trackSampleOffset?.trackId) {
         const { trackId, offset } = trackSampleOffset;
         await client.cancelResponse(trackId, offset);
+        logger.current.log('conversation.cancelled', { trackId, offset });
       }
-    });
-
-    // Handle conversation updates and audio playback
+    });    // Handle conversation updates and audio playback
     client.on('conversation.updated', async ({ item, delta }: any) => {
+      logger.current.log('conversation.updated', { itemId: item.id, delta: delta ? 'present' : 'absent' });
+      
       const items = client.conversation.getItems();
       if (delta?.audio) {
         wavStreamPlayer.add16BitPCM(delta.audio, item.id);
+        logger.current.log('audio.added', { itemId: item.id });
       }
+      
       if (item.status === 'completed' && item.formatted.audio?.length) {
+        logger.current.log('audio.completed', { itemId: item.id });
         const wavFile = await WavRecorder.decode(
           item.formatted.audio,
           24000,
           24000
         );
         item.formatted.file = wavFile;
+        logger.current.log('audio.decoded', { itemId: item.id });
       }
       setItems(items);
     });
@@ -233,6 +257,7 @@ export function StoryConsolePage() {
     setItems(client.conversation.getItems());
 
     return () => {
+      logger.current.log('cleanup', 'client reset');
       client.reset();
     };
   }, []);
@@ -243,8 +268,15 @@ export function StoryConsolePage() {
         <Button
           onClick={isConnected ? disconnectStory : connectStory}
           className={isConnected ? 'connected' : ''}
+          label={isConnected ? 'Stop Story' : 'Start Story'}
         >
           {isConnected ? 'Stop Story' : 'Start Story'}
+        </Button>
+        <Button 
+          onClick={() => logger.current?.downloadLogs()}
+          label="Download Logs"  // Add label prop
+        >
+          Download Logs
         </Button>
       </div>
       
