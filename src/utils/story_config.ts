@@ -1,9 +1,4 @@
-export const VOICE_CONFIGS = {
-  narrator: 'alloy',
-  chef_bao: 'echo',
-  brick_buddy: 'fable'
-} as const;
-
+// Story instructions and personality guidelines
 export const STORY_INSTRUCTIONS = `System settings:
 Tool use: enabled.
 
@@ -21,6 +16,23 @@ Personality:
 - Be engaging and encouraging
 - Maintain character consistency
 `;
+
+// Just define the session config object directly
+export const STORY_SESSION = {
+  modalities: ['text', 'audio'],
+  voice: 'alloy' as const,
+  input_audio_format: 'pcm16' as const,  // Match the audio format used in ConsolePage
+  output_audio_format: 'pcm16' as const, // Match the audio format used in ConsolePage
+  input_audio_transcription: { model: 'whisper-1' },
+  temperature: 0.8,
+  instructions: STORY_INSTRUCTIONS
+};
+
+export const VOICE_CONFIGS = {
+  narrator: 'alloy',
+  chef_bao: 'echo',
+  brick_buddy: 'shimmer'
+} as const;
 
 export interface StoryElement {
   type: 'narrate' | 'speak' | 'input';

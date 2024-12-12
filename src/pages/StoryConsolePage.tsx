@@ -4,17 +4,12 @@ import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { WavRenderer } from '../utils/wav_renderer';
 import { Button } from '../components/button/Button';
+import { STORY_INSTRUCTIONS } from '../utils/story_config';
+import { loadStoryContent, parseStoryMd } from '../utils/file_utils';
+
 import './ConsolePage.scss';
 
 const LOCAL_RELAY_SERVER_URL: string = process.env.REACT_APP_LOCAL_RELAY_SERVER_URL || '';
-
-// Story-specific instructions for the model
-const storyInstructions = {
-  system: `You are a friendly storyteller who helps children learn to read through interactive stories. 
-          You should speak clearly and warmly, using simple words appropriate for 4-year-olds.
-          The current story is about making pork buns and building with Lego blocks.`,
-  user: `Let's begin our story adventure! I'll help you read along.`
-};
 
 interface RealtimeEvent {
   time: string;
@@ -69,6 +64,11 @@ export function StoryConsolePage() {
     const wavRecorder = wavRecorderRef.current;
     const wavStreamPlayer = wavStreamPlayerRef.current;
 
+    // Load initial story content
+    const storyContent = await loadStoryContent('scene1_story.md');
+    const scene = parseStoryMd(storyContent);
+    const initialNarration = scene.elements.find(e => e.type === 'narrate')?.content;
+
     startTimeRef.current = new Date().toISOString();
     setIsConnected(true);
     setRealtimeEvents([]);
@@ -83,7 +83,7 @@ export function StoryConsolePage() {
     client.sendUserMessageContent([
       {
         type: 'input_text',
-        text: storyInstructions.system,
+        text: `${STORY_INSTRUCTIONS}\n[SYSTEM] Initial narration: "${initialNarration}"\nPlease begin by narrating exactly the provided initial narration text.`,
       },
     ]);
 
@@ -91,7 +91,7 @@ export function StoryConsolePage() {
     client.sendUserMessageContent([
       {
         type: 'input_text',
-        text: storyInstructions.user,
+        text: `Let's begin our story adventure!`,
       },
     ]);
   }, []);
